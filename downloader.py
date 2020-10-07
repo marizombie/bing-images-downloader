@@ -43,7 +43,7 @@ if __name__ == "__main__":
         "minHeight": 1000,
         "minWidth": 1000,
         "size": "Large",
-        # "imageContent": "Portrait"
+        "imageContent": "Portrait"
     }
 
     response = requests.get(
