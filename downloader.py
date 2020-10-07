@@ -15,7 +15,7 @@ stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -
 headers = {"Ocp-Apim-Subscription-Key": image_search_api_key}
 
 
-def get_image(url):
+def get_image(url, image_type, save_dir):
     # TODO: improve exceptions handling
     try:
         image_data = requests.get(url)
@@ -51,7 +51,7 @@ def get_image(url):
         return
 
 
-def get_response(params):
+def make_response(params, save_dir):
     response = requests.get(
         image_search_url, headers=headers, params=params)
     response.raise_for_status()
@@ -60,17 +60,20 @@ def get_response(params):
     image_urls = [img["contentUrl"] for img in search_results["value"]]
 
     for url in tqdm(image_urls):
-        get_image(url)
+        get_image(url, params["imageType"], save_dir)
 
 
-if __name__ == "__main__":
+def main():
     parser = ArgumentParser(description="Bing images downloader")
-    group = parser.add_mutually_exclusive_group(required=True)
 
+    group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-q', '--query',
                        help='Search query, always required')
     group.add_argument('-qs', '--queries',
-                       help='Search starts to look photos for all queries one by one with other common params, queries must be split by commas')
+                       help='Search starts to look photos for all queries one by one preserving params, queries must be split by commas')
+    group.add_argument('-qf', '--queries_file',
+                       help='Path to queries file, queries must be one per each line')
+
     parser.add_argument('-d', '--destination', default='downloads',
                         help='Path to folder where images will be downloaded')
     parser.add_argument('-c', '--count', type=int, default=BING_MAX_IMAGES,
@@ -95,11 +98,14 @@ if __name__ == "__main__":
                         help=f"Minimal image height (default: %(default)s)")
 
     args = parser.parse_args()
+    query = args.query
+    queries = args.queries
+    queries_path = args.queries_file
+
     save_dir = Path(args.destination)
     count = args.count
     filter_stocks = args.filter_stocks
-    query = args.query
-    queries = args.queries
+
     image_type = args.type
     image_content = args.content
     image_size = args.size
@@ -137,13 +143,21 @@ if __name__ == "__main__":
 
     stocks_filter = stocks_substring if filter_stocks == FilterStates.enabled.value else ''
 
-    if not queries:
+    if query:
         params["q"] = query + stocks_filter
-        get_response(params)
+        make_response(params, save_dir)
+        return
+    elif queries_path:
+        queries = [q.strip('\n') for q in open(queries_path).readlines()]
     else:
         queries = queries.split(',')
-        for query in queries:
-            query = query.lstrip()
-            print(f"Download for query '{query}' started")
-            params["q"] = query + stocks_filter
-            get_response(params)
+
+    for query in queries:
+        query = query.lstrip()
+        print(f"Download for query '{query}' started")
+        params["q"] = query + stocks_filter
+        make_response(params, save_dir)
+
+
+if __name__ == "__main__":
+    main()
