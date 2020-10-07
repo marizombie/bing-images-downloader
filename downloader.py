@@ -1,4 +1,5 @@
 import requests
+from re import split
 from tqdm import tqdm
 from PIL import Image
 from io import BytesIO
@@ -14,10 +15,62 @@ stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -
 headers = {"Ocp-Apim-Subscription-Key": image_search_api_key}
 
 
+def get_image(url):
+    # TODO: improve exceptions handling
+    try:
+        image_data = requests.get(url)
+        image_data.raise_for_status()
+    except Exception as e:
+        print(f"Exception {e} while downloading image '{url}'")
+        return
+
+    name = Path(url).name.split('.')[0][:30]
+
+    if not Path(url).suffix:
+        if image_type == ImageType.transparent:
+            name += '.png'
+        elif image_type == ImageType.animated_gif or image_type == ImageType.animated_gif_secure:
+            name += '.gif'
+        else:
+            name += '.jpg'
+    else:
+        name += split(r'\?|\:', Path(url).suffix)[0].lower()
+
+    try:
+        image = Image.open(BytesIO(image_data.content))
+
+        if image_type == ImageType.transparent or image_type == ImageType.animated_gif or \
+                image_type == ImageType.animated_gif_secure:
+            image = image.convert('RGBA')
+        else:
+            image = image.convert('RGB')
+
+        image.save(save_dir/name, quality=98)
+    except Exception as e:
+        print(f"Exception {e} while saving image '{url}'")
+        return
+
+
+def get_response(params):
+    response = requests.get(
+        image_search_url, headers=headers, params=params)
+    response.raise_for_status()
+    search_results = response.json()
+
+    image_urls = [img["contentUrl"] for img in search_results["value"]]
+
+    for url in tqdm(image_urls):
+        get_image(url)
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(description="Bing images downloader")
-    parser.add_argument('-q', '--query', required=True,
-                        help='Search query, always required')
+    group = parser.add_mutually_exclusive_group(required=True)
+
+    group.add_argument('-q', '--query',
+                       help='Search query, always required')
+    group.add_argument('-qs', '--queries',
+                       help='Search starts to look photos for all queries one by one with other common params, queries must be split by commas')
     parser.add_argument('-d', '--destination', default='downloads',
                         help='Path to folder where images will be downloaded')
     parser.add_argument('-c', '--count', type=int, default=BING_MAX_IMAGES,
@@ -45,8 +98,8 @@ if __name__ == "__main__":
     save_dir = Path(args.destination)
     count = args.count
     filter_stocks = args.filter_stocks
-    query = args.query + \
-        stocks_substring if filter_stocks == FilterStates.enabled.value else args.query
+    query = args.query
+    queries = args.queries
     image_type = args.type
     image_content = args.content
     image_size = args.size
@@ -61,7 +114,6 @@ if __name__ == "__main__":
         print(f'Directory {save_dir} created')
 
     params = {
-        "q": query,
         "count": count,
         # "license": "share",
         "minHeight": min_image_height,
@@ -70,7 +122,7 @@ if __name__ == "__main__":
         # TODO: add more params
     }
 
-    #TODO: optimize
+    # TODO: optimize
     if image_type != ImageType.all_content.value:
         params["imageType"] = image_type
 
@@ -83,43 +135,15 @@ if __name__ == "__main__":
     if aspect != Aspect.all_content.value:
         params["aspect"] = aspect
 
-    response = requests.get(
-        image_search_url, headers=headers, params=params)
-    response.raise_for_status()
-    search_results = response.json()
+    stocks_filter = stocks_substring if filter_stocks == FilterStates.enabled.value else ''
 
-    image_urls = [img["contentUrl"] for img in search_results["value"]]
-
-    # TODO: handle exceptions better
-    for url in tqdm(image_urls):
-        try:
-            image_data = requests.get(url)
-            image_data.raise_for_status()
-        except Exception as e:
-            print(f"Exception {e} while downloading image '{url}'")
-            continue
-
-        name = Path(url).name.split('.')[0][:30]
-        if not Path(url).suffix:
-            if image_type == ImageType.transparent:
-                name += '.png'
-            elif image_type == ImageType.animated_gif or image_type == ImageType.animated_gif_secure:
-                name += '.gif'
-            else:
-                name += '.jpg'
-        else:
-            name += Path(url).suffix.split("?")[0].lower()
-
-        try:
-            image = Image.open(BytesIO(image_data.content))
-
-            if image_type == ImageType.transparent or image_type == ImageType.animated_gif or \
-                    image_type == ImageType.animated_gif_secure:
-                image = image.convert('RGBA')
-            else:
-                image = image.convert('RGB')
-
-            image.save(save_dir/name, quality=98)
-        except Exception as e:
-            print(f"Exception {e} while saving image '{url}'")
-            continue
+    if not queries:
+        params["q"] = query + stocks_filter
+        get_response(params)
+    else:
+        queries = queries.split(',')
+        for query in queries:
+            query = query.lstrip()
+            print(f"Download for query '{query}' started")
+            params["q"] = query + stocks_filter
+            get_response(params)
