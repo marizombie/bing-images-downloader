@@ -3,6 +3,7 @@ from tqdm import tqdm
 from PIL import Image
 from io import BytesIO
 from pathlib import Path
+from enum_params import *
 from argparse import ArgumentParser
 from api_key import image_search_api_key
 
@@ -10,52 +11,87 @@ from api_key import image_search_api_key
 BING_MAX_IMAGES = 150
 image_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
+headers = {"Ocp-Apim-Subscription-Key": image_search_api_key}
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Bing images downloader")
+    parser.add_argument('-q', '--query', required=True,
+                        help='Search query, always required')
     parser.add_argument('-d', '--destination', default='downloads',
                         help='Path to folder where images will be downloaded')
     parser.add_argument('-c', '--count', type=int, default=BING_MAX_IMAGES,
                         help=f'Images limit, maximum is {BING_MAX_IMAGES} and set as default')
-    parser.add_argument('-q', '--query', help='Search query')
+
+    parser.add_argument('-st', '--filter_stocks', default=FilterStates.enabled.value, choices=FilterStates.get_values(),
+                        help=f"Drops stock photos from response (default: %(default)s), choises are: %(choices)s")
+    parser.add_argument('-it', '--type', default=ImageType.photo.value, choices=ImageType.get_values(),
+                        help=f"Image type (default: %(default)s), choises are: %(choices)s")
+    parser.add_argument('-ic', '--content', default=ImageContent.portrait.value, choices=ImageContent.get_values(),
+                        help=f"Image content (default: %(default)s), choises are: %(choices)s")
+    parser.add_argument('-is', '--size', default=ImageSize.large.value, choices=ImageSize.get_values(),
+                        help=f"Image size (default: %(default)s), choises are: %(choices)s")
+
+    parser.add_argument('--color', default=ImageColor.color_only.value, choices=ImageColor.get_values(),
+                        help=f"Image color (default: %(default)s), choises are: %(choices)s")
+    parser.add_argument('--aspect', choices=Aspect.get_values(),
+                        help=f"Filters images by the following aspect ratios: %(choices)s")
+    parser.add_argument('--min_width', type=int, default=1000,
+                        help=f"Minimal image width (default: %(default)s)")
+    parser.add_argument('--min_height', type=int, default=1000,
+                        help=f"Minimal image height (default: %(default)s)")
 
     args = parser.parse_args()
     save_dir = Path(args.destination)
     count = args.count
-    query = args.query + stocks_substring
+    filter_stocks = args.filter_stocks
+    query = args.query + \
+        stocks_substring if filter_stocks == FilterStates.enabled.value else args.query
+    image_type = args.type
+    image_content = args.content
+    image_size = args.size
+
+    color = args.color
+    min_image_width = args.min_width
+    min_image_height = args.min_height
+    aspect = args.aspect
 
     if not save_dir.is_dir():
         save_dir.mkdir(parents=True)
         print(f'Directory {save_dir} created')
 
-    headers = {
-        "Ocp-Apim-Subscription-Key": image_search_api_key,
-    }
-
     params = {
         "q": query,
         "count": count,
-        "imageType": "Photo",
         # "license": "share",
-        #   "aspect": "tall",
-        "color": "ColorOnly",
-        "minHeight": 1000,
-        "minWidth": 1000,
-        "size": "Large",
-        "imageContent": "Portrait"
+        "minHeight": min_image_height,
+        "minWidth": min_image_width,
+        "size": image_size,
+        # TODO: add more params
     }
+
+    #TODO: optimize
+    if image_type != ImageType.all_content.value:
+        params["imageType"] = image_type
+
+    if image_content != ImageContent.any_content.value:
+        params["imageContent"] = image_content
+
+    if color != ImageColor.all_content.value:
+        params["color"] = color
+
+    if aspect != Aspect.all_content.value:
+        params["aspect"] = aspect
 
     response = requests.get(
         image_search_url, headers=headers, params=params)
-
     response.raise_for_status()
     search_results = response.json()
 
-    image_dict = [(img["name"].replace(' ', '_') + '.jpg', img["contentUrl"])
-                  for img in search_results["value"]]
+    image_urls = [img["contentUrl"] for img in search_results["value"]]
 
-    for name, url in tqdm(image_dict):
+    # TODO: handle exceptions better
+    for url in tqdm(image_urls):
         try:
             image_data = requests.get(url)
             image_data.raise_for_status()
@@ -63,8 +99,26 @@ if __name__ == "__main__":
             print(f"Exception {e} while downloading image '{url}'")
             continue
 
+        name = Path(url).name.split('.')[0][:30]
+        if not Path(url).suffix:
+            if image_type == ImageType.transparent:
+                name += '.png'
+            elif image_type == ImageType.animated_gif or image_type == ImageType.animated_gif_secure:
+                name += '.gif'
+            else:
+                name += '.jpg'
+        else:
+            name += Path(url).suffix.split("?")[0].lower()
+
         try:
             image = Image.open(BytesIO(image_data.content))
+
+            if image_type == ImageType.transparent or image_type == ImageType.animated_gif or \
+                    image_type == ImageType.animated_gif_secure:
+                image = image.convert('RGBA')
+            else:
+                image = image.convert('RGB')
+
             image.save(save_dir/name, quality=98)
         except Exception as e:
             print(f"Exception {e} while saving image '{url}'")
