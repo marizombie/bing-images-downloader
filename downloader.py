@@ -62,7 +62,7 @@ def request_image(params, save_dir):
         search_results = response.json()
     except Exception as e:
         print(
-            f"Exception {e} while getting images for query {params['query']}")
+            f"Exception {e} while getting images for query {params["q"]}")
         return
 
     image_urls = [img["contentUrl"] for img in search_results["value"]]
