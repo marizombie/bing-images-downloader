@@ -11,7 +11,7 @@ from api_key import image_search_api_key
 
 DEFAULT_TIMEOUT = 3
 BING_MAX_IMAGES = 150
-image_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
+images_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
 common_header = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"
@@ -23,15 +23,7 @@ search_session = requests.Session()
 search_session.headers = api_header
 
 
-def get_image(url, image_type, save_dir):
-    # TODO: improve exceptions handling
-    try:
-        image_data = download_session.get(url, timeout=DEFAULT_TIMEOUT)
-        image_data.raise_for_status()
-    except Exception as e:
-        print(f"Exception while downloading: {e}")
-        return
-
+def get_name(url, image_type):
     name = Path(url).name.split('.')[0][:30]
 
     if not Path(url).suffix:
@@ -44,6 +36,10 @@ def get_image(url, image_type, save_dir):
     else:
         name += split(r'\?|\:|\&|\!', Path(url).suffix)[0].lower()
 
+    return name
+
+
+def save_image(name, image_data, image_type, save_dir):
     try:
         image = Image.open(BytesIO(image_data.content))
 
@@ -55,13 +51,26 @@ def get_image(url, image_type, save_dir):
 
         image.save(save_dir/name, quality=98)
     except Exception as e:
-        print(f"Exception {e} while saving image '{url}'")
+        print(f"Exception {e} while saving image '{name}'")
         return
+
+
+def get_image(url, image_type, save_dir):
+    # TODO: improve exceptions handling
+    try:
+        image_data = download_session.get(url, timeout=DEFAULT_TIMEOUT)
+        image_data.raise_for_status()
+    except Exception as e:
+        print(f"Exception while downloading image: {e}")
+        return
+
+    name = get_name(url, image_type)
+    save_image(name, image_data, image_type, save_dir)
 
 
 def request_image(params, save_dir):
     try:
-        response = search_session.get(image_search_url, params=params)
+        response = search_session.get(images_search_url, params=params)
         response.raise_for_status()
         search_results = response.json()
     except Exception as e:
