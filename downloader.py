@@ -9,19 +9,22 @@ from argparse import ArgumentParser
 from api_key import image_search_api_key
 
 
+DEFAULT_TIMEOUT = 3
 BING_MAX_IMAGES = 150
 image_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
-headers = {"Ocp-Apim-Subscription-Key": image_search_api_key}
+headers = {"Ocp-Apim-Subscription-Key": image_search_api_key,
+           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"
+           }
 
 
 def get_image(url, image_type, save_dir):
     # TODO: improve exceptions handling
     try:
-        image_data = requests.get(url)
+        image_data = requests.get(url, timeout=DEFAULT_TIMEOUT)
         image_data.raise_for_status()
     except Exception as e:
-        print(f"Exception {e} while downloading image '{url}'")
+        print(f"Exception while downloading: {e}")
         return
 
     name = Path(url).name.split('.')[0][:30]
@@ -34,7 +37,7 @@ def get_image(url, image_type, save_dir):
         else:
             name += '.jpg'
     else:
-        name += split(r'\?|\:', Path(url).suffix)[0].lower()
+        name += split(r'\?|\:|\&|\!', Path(url).suffix)[0].lower()
 
     try:
         image = Image.open(BytesIO(image_data.content))
@@ -51,11 +54,16 @@ def get_image(url, image_type, save_dir):
         return
 
 
-def make_response(params, save_dir):
-    response = requests.get(
-        image_search_url, headers=headers, params=params)
-    response.raise_for_status()
-    search_results = response.json()
+def request_image(params, save_dir):
+    try:
+        response = requests.get(
+            image_search_url, headers=headers, params=params)
+        response.raise_for_status()
+        search_results = response.json()
+    except Exception as e:
+        print(
+            f"Exception {e} while getting images for query {params['query']}")
+        return
 
     image_urls = [img["contentUrl"] for img in search_results["value"]]
 
@@ -145,7 +153,7 @@ def main():
 
     if query:
         params["q"] = query + stocks_filter
-        make_response(params, save_dir)
+        request_image(params, save_dir)
         return
     elif queries_path:
         queries = [q.strip('\n') for q in open(queries_path).readlines()]
@@ -156,7 +164,7 @@ def main():
         query = query.lstrip()
         print(f"Download for query '{query}' started")
         params["q"] = query + stocks_filter
-        make_response(params, save_dir)
+        request_image(params, save_dir)
 
 
 if __name__ == "__main__":
