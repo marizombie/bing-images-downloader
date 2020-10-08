@@ -7,11 +7,6 @@ class CustomEnum(Enum):
         return [e.value for e in cls]
 
 
-class FilterStates(CustomEnum):
-    enabled = 'enabled'
-    disabled = 'disabled'
-
-
 class ImageType(CustomEnum):
     photo = 'photo'
     clipart = 'clipart'

@@ -1,61 +1,19 @@
-import requests
-from re import split
+from utils import *
 from tqdm import tqdm
-from PIL import Image
-from io import BytesIO
 from pathlib import Path
 from enum_params import *
 from argparse import ArgumentParser
-from api_key import image_search_api_key
 
 
-DEFAULT_TIMEOUT = 3
-BING_MAX_IMAGES = 150
+DEFAULT_TIMEOUT = 5
+BING_BATCH_SIZE = 150
+DEFAULT_IMAGES_COUNT = 600
+
 images_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
-common_header = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"
-}
-download_session = requests.Session()
-download_session.headers = common_header
-api_header = {"Ocp-Apim-Subscription-Key": image_search_api_key}
-search_session = requests.Session()
-search_session.headers = api_header
 
 
-def get_name(url, image_type):
-    name = Path(url).name.split('.')[0][:30]
-
-    if not Path(url).suffix:
-        if image_type == ImageType.transparent:
-            name += '.png'
-        elif image_type == ImageType.animated_gif or image_type == ImageType.animated_gif_secure:
-            name += '.gif'
-        else:
-            name += '.jpg'
-    else:
-        name += split(r'\?|\:|\&|\!', Path(url).suffix)[0].lower()
-
-    return name
-
-
-def save_image(name, image_data, image_type, save_dir):
-    try:
-        image = Image.open(BytesIO(image_data.content))
-
-        if image_type == ImageType.transparent or image_type == ImageType.animated_gif or \
-                image_type == ImageType.animated_gif_secure:
-            image = image.convert('RGBA')
-        else:
-            image = image.convert('RGB')
-
-        image.save(save_dir/name, quality=98)
-    except Exception as e:
-        print(f"Exception {e} while saving image '{name}'")
-        return
-
-
-def get_image(url, image_type, save_dir):
+def get_image(index, url, image_type, save_dir):
     # TODO: improve exceptions handling
     try:
         image_data = download_session.get(url, timeout=DEFAULT_TIMEOUT)
@@ -64,43 +22,68 @@ def get_image(url, image_type, save_dir):
         print(f"Exception while downloading image: {e}")
         return
 
-    name = get_name(url, image_type)
+    name = f'{index}._{get_name(url, image_type)}'
     save_image(name, image_data, image_type, save_dir)
 
 
-def request_image(params, save_dir):
+def run_search(params):
     try:
         response = search_session.get(images_search_url, params=params)
         response.raise_for_status()
         search_results = response.json()
     except Exception as e:
-        print(
-            f"Exception {e} while getting images for query {params['q']}")
+        print(f"Exception {e} while searching for images")
+        return
+    return search_results
+
+
+def request_images(query, params, save_dir, maximum_wanted):
+    search_results = run_search(params)
+    if not search_results:
         return
 
-    image_urls = [img["contentUrl"] for img in search_results["value"]]
+    image_urls = extract_urls(search_results)
+    needed_images_len = params["count"]
 
-    for url in tqdm(image_urls):
-        get_image(url, params["imageType"], save_dir)
+    if maximum_wanted or needed_images_len > BING_BATCH_SIZE:
+        total = search_results['totalEstimatedMatches'] if maximum_wanted else needed_images_len
+        params["offset"] = 0
+        # desc='Search...', bar_format=references_bar_format):
+        for i in range(total // BING_BATCH_SIZE + 1):
+            params["offset"] += BING_BATCH_SIZE
+            search_results = run_search(params)
+            if not search_results:
+                continue
+            image_urls += extract_urls(search_results)
+            # TODO: check count on downloaded images, not here
+            if len(image_urls) >= needed_images_len:
+                image_urls = image_urls[:needed_images_len]
+                break
+
+    for i, url in tqdm(enumerate(image_urls), desc=f"Progress for query '{query}'", total=len(image_urls)):
+        get_image(i, url, params["imageType"], save_dir)
 
 
 def main():
     parser = ArgumentParser(description="Bing images downloader")
 
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-q', '--query',
-                       help='Search query, always required')
-    group.add_argument('-qs', '--queries',
-                       help='Search starts to look photos for all queries one by one preserving params, queries must be split by commas')
-    group.add_argument('-qf', '--queries_file',
-                       help='Path to queries file, queries must be one per each line')
+    query_group = parser.add_mutually_exclusive_group(required=True)
+    query_group.add_argument('-q', '--query',
+                             help='Search query, always required')
+    query_group.add_argument('-qs', '--queries',
+                             help='Search starts to look photos for all queries one by one preserving params, queries must be split by commas')
+    query_group.add_argument('-qf', '--queries_file',
+                             help='Path to queries file, queries must be one per each line')
+
+    count_group = parser.add_mutually_exclusive_group()
+    count_group.add_argument('-c', '--count', type=int, default=DEFAULT_IMAGES_COUNT,
+                             help=f'Images to download (default: %(default)s)')
+    count_group.add_argument('-m', '--maximum_download', default=False, action='store_true',
+                             help=f'Download as many results as it is possible (default: %(default)s)')
 
     parser.add_argument('-d', '--destination', default='downloads',
                         help='Path to folder where images will be downloaded')
-    parser.add_argument('-c', '--count', type=int, default=BING_MAX_IMAGES,
-                        help=f'Images limit, maximum is {BING_MAX_IMAGES} and set as default')
-
-    parser.add_argument('-st', '--filter_stocks', default=FilterStates.enabled.value, choices=FilterStates.get_values(),
+    parser.add_argument('-st', '--filter_stocks', default=True, action='store_true',
                         help=f"Drops stock photos from response (default: %(default)s), choises are: %(choices)s")
     parser.add_argument('-it', '--type', default=ImageType.photo.value, choices=ImageType.get_values(),
                         help=f"Image type (default: %(default)s), choises are: %(choices)s")
@@ -125,6 +108,7 @@ def main():
 
     save_dir = Path(args.destination)
     count = args.count
+    maximum_wanted = args.maximum_download
     filter_stocks = args.filter_stocks
 
     image_type = args.type
@@ -162,22 +146,22 @@ def main():
     if aspect != Aspect.all_content.value:
         params["aspect"] = aspect
 
-    stocks_filter = stocks_substring if filter_stocks == FilterStates.enabled.value else ''
+    stocks_filter = stocks_substring if filter_stocks else ''
 
     if query:
         params["q"] = query + stocks_filter
-        request_image(params, save_dir)
+        request_images(query, params, save_dir, maximum_wanted)
         return
     elif queries_path:
         queries = [q.strip('\n') for q in open(queries_path).readlines()]
     else:
         queries = queries.split(',')
 
-    for query in queries:
+    for query in tqdm(queries, desc='Common progress'):
         query = query.lstrip()
-        print(f"Download for query '{query}' started")
+        # print(f"Download for query '{query}' started")
         params["q"] = query + stocks_filter
-        request_image(params, save_dir)
+        request_images(query, params, save_dir, maximum_wanted)
 
 
 if __name__ == "__main__":
