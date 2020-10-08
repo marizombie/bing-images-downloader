@@ -13,15 +13,20 @@ DEFAULT_TIMEOUT = 3
 BING_MAX_IMAGES = 150
 image_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
 stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
-headers = {"Ocp-Apim-Subscription-Key": image_search_api_key,
-           "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"
-           }
+common_header = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.110 Safari/537.36"
+}
+download_session = requests.Session()
+download_session.headers = common_header
+api_header = {"Ocp-Apim-Subscription-Key": image_search_api_key}
+search_session = requests.Session()
+search_session.headers = api_header
 
 
 def get_image(url, image_type, save_dir):
     # TODO: improve exceptions handling
     try:
-        image_data = requests.get(url, timeout=DEFAULT_TIMEOUT)
+        image_data = download_session.get(url, timeout=DEFAULT_TIMEOUT)
         image_data.raise_for_status()
     except Exception as e:
         print(f"Exception while downloading: {e}")
@@ -56,13 +61,12 @@ def get_image(url, image_type, save_dir):
 
 def request_image(params, save_dir):
     try:
-        response = requests.get(
-            image_search_url, headers=headers, params=params)
+        response = search_session.get(image_search_url, params=params)
         response.raise_for_status()
         search_results = response.json()
     except Exception as e:
         print(
-            f"Exception {e} while getting images for query {params["q"]}")
+            f"Exception {e} while getting images for query {params['q']}")
         return
 
     image_urls = [img["contentUrl"] for img in search_results["value"]]
@@ -169,3 +173,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    download_session.close()
+    search_session.close()
