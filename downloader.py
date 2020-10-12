@@ -5,25 +5,11 @@ from enum_params import *
 from argparse import ArgumentParser
 
 
-DEFAULT_TIMEOUT = 5
 BING_BATCH_SIZE = 150
 DEFAULT_IMAGES_COUNT = 600
 
 images_search_url = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
-stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock"
-
-
-def get_image(index, url, image_type, save_dir):
-    # TODO: improve exceptions handling
-    try:
-        image_data = download_session.get(url, timeout=DEFAULT_TIMEOUT)
-        image_data.raise_for_status()
-    except Exception as e:
-        print(f"Exception while downloading image: {e}")
-        return
-
-    name = f'{index}._{get_name(url, image_type)}'
-    save_image(name, image_data, image_type, save_dir)
+stocks_substring = " -shutterstock -dreamstime -bigstock -alamy -depositphotos -gettyimages -istock -featurepics"
 
 
 def run_search(params):
@@ -61,7 +47,7 @@ def request_images(query, params, save_dir, maximum_wanted):
                 break
 
     for i, url in tqdm(enumerate(image_urls), desc=f"Progress for query '{query}'", total=len(image_urls)):
-        get_image(i, url, params["imageType"], save_dir)
+        get_image(i, url, save_dir, params["imageType"])
 
 
 def main():

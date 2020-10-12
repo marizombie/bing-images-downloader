@@ -1,9 +1,9 @@
-## Bing images downloader
+## Bing Image Search downloader
 
-To work with script, put your bing image search API key to `api_key.py` near the `downloader.py` and assign it to `image_search_api_key` variable.  
+To work with Image Search API use `downloader.py` script, put your bing image search API key to `api_key.py` near the script and assign it to `image_search_api_key` variable.  
 Install requirements using `pip install -r requirements.txt`  
 
-## Parameters
+### Parameters
 - query - specify one of the next three parameters to start your search, it is the only required parameter:
   - `-q` or `--query` - search key word(s)
   - `-qs` or `--queries` - multiple queries separated by comma, iamges for them will be downloaded one by one
@@ -19,3 +19,14 @@ Install requirements using `pip install -r requirements.txt`
 - `--aspect` - aspect ratio
 - `--min_width` - minimal width of downloading images
 - `--min_height` - minimal height of downloading images
+
+## Bing Visual Search downloader
+
+To work with Visual Search API use `visual_downloader.py` script, put your bing visual search API key to `api_key.py` near the script and assign it to `visual_search_api_key` variable.  
+Install requirements using `pip install -r requirements.txt`  
+
+### Parameters
+- Similar reference - specify one of the next parameters to start your search, it is the only required parameter:
+  - `-si` or `--similar_url` - reference to what you want to download
+  - `-f` or `--file_path` - path to file with multiple similar reference urls, one per line
+- `-d` or `--destination` - path to folder for downloading images, by default creates `similar-downloads` directory where script is launched
